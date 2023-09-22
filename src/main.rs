@@ -19,7 +19,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         barents::live_ais::ais_stream::ScopeType::Ais,
     );
 
-    ais.fetch_token().await?;
+    // ais.fetch_token().await?;
+    ais.get_latest_ais().await?;
     
     Ok(())
 }
