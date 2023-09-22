@@ -1,9 +1,13 @@
+use crate::live_ais::respose_structs::GetAISLatestResponses;
+
 use super::respose_structs::TokenResponse;
 use reqwest::{self, Client, StatusCode};
 use std::collections::HashMap;
 use thiserror::Error;
 
 use log::{debug, error, info};
+
+static BASE_URL: &'static str = "https://live.ais.barentswatch.no";
 
 #[derive(Error, Debug)]
 pub enum FetchTokenError {
@@ -18,6 +22,9 @@ pub enum FetchTokenError {
 
     #[error("deserialization error: {0}")]
     DeserializationError(reqwest::Error),
+
+    #[error("no token available")]
+    NoToken,
 }
 
 pub enum ScopeType {
@@ -78,7 +85,7 @@ impl AisLiveAPI {
         let url = reqwest::Url::parse("https://id.barentswatch.no/connect/token")
             .map_err(FetchTokenError::InvalidUrl)?;
 
-        debug!("fetch_token method. Value of URL: {}", url);
+        debug!("fetch_token method - Value of URL: {}", url);
 
         let res = self
             .client
@@ -106,5 +113,44 @@ impl AisLiveAPI {
             }
             status_code => Err(FetchTokenError::UnexpectedStatusCode(status_code)),
         }
+    }
+
+    // TODO add method for calculating delta between expiry time and fetched time so that we can fetch new token before it is too late.
+
+    pub async fn get_latest_ais(&mut self) -> Result<(), FetchTokenError> {
+        
+
+        let url = reqwest::Url::parse(&format!("{}/v1/latest/ais", BASE_URL))
+            .map_err(FetchTokenError::InvalidUrl)?;
+        debug!("Method get_latest_ais - Value of URL: {}", url);
+
+        // TODO Check the validity of the token
+        if self.token.is_none() {
+            self.fetch_token().await?;
+        }      
+        let token = self.token.as_deref().ok_or(FetchTokenError::NoToken)?;
+
+        let res = self
+            .client
+            .get(url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(FetchTokenError::NetworkError)?;
+        match res.status() {
+            StatusCode::OK => {
+                let latest_ais_response: GetAISLatestResponses = res
+                    .json::<GetAISLatestResponses>()
+                    .await
+                    .map_err(FetchTokenError::DeserializationError)?;
+
+                info!("Successfully fetched and deserialized GetAISLatestResponse. Number of messages recieved: {}", latest_ais_response.len());
+                
+                Ok(())
+
+            }
+            status_code => Err(FetchTokenError::UnexpectedStatusCode(status_code)),
+        }
+
     }
 }
