@@ -4,6 +4,7 @@ use super::respose_structs::TokenResponse;
 use reqwest::{self, Client, StatusCode};
 use std::collections::HashMap;
 use thiserror::Error;
+use chrono::prelude::*;
 
 use log::{debug, error, info};
 
@@ -49,7 +50,7 @@ pub struct AisLiveAPI {
     client: Client,
     token: Option<String>,
     token_expires_in: Option<i64>,
-    token_fetched_time: Option<chrono::DateTime<chrono::Utc>>,
+    token_fetched_time: Option<DateTime<Utc>>,
 }
 
 impl AisLiveAPI {
@@ -102,7 +103,7 @@ impl AisLiveAPI {
                     .map_err(FetchTokenError::DeserializationError)?;
                 self.token = Some(String::from(token_response.access_token));
                 self.token_expires_in = Some(token_response.expires_in);
-                self.token_fetched_time = Some(chrono::Utc::now());
+                self.token_fetched_time = Some(Utc::now());
 
                 info!(
                     "Successfully fetched token. Expiry time: {:?}.",
@@ -116,18 +117,28 @@ impl AisLiveAPI {
     }
 
     // TODO add method for calculating delta between expiry time and fetched time so that we can fetch new token before it is too late.
+    async fn refresh_token(&mut self) -> Result<(), FetchTokenError> {
+        if let Some(token_fetched_time) = self.token_fetched_time {
+            let duration_since_fetch = Utc::now().signed_duration_since(token_fetched_time).num_seconds();
+            debug!("{}", duration_since_fetch);
+            
+            if duration_since_fetch < 3300 {
+                debug!("Token is still valid for a long enough time, no need to refresh it.");
+                return Ok(());
+            }
+        }
+        
+        self.fetch_token().await?;
+        Ok(())
+    }
+    
 
     pub async fn get_latest_ais(&mut self) -> Result<(), FetchTokenError> {
-        
-
         let url = reqwest::Url::parse(&format!("{}/v1/latest/ais", BASE_URL))
             .map_err(FetchTokenError::InvalidUrl)?;
         debug!("Method get_latest_ais - Value of URL: {}", url);
 
-        // TODO Check the validity of the token
-        if self.token.is_none() {
-            self.fetch_token().await?;
-        }      
+        self.refresh_token().await?;    
         let token = self.token.as_deref().ok_or(FetchTokenError::NoToken)?;
 
         let res = self
@@ -147,10 +158,8 @@ impl AisLiveAPI {
                 info!("Successfully fetched and deserialized GetAISLatestResponse. Number of messages recieved: {}", latest_ais_response.len());
                 
                 Ok(())
-
             }
             status_code => Err(FetchTokenError::UnexpectedStatusCode(status_code)),
         }
-
     }
 }
