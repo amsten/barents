@@ -116,7 +116,6 @@ impl AisLiveAPI {
         }
     }
 
-    // TODO add method for calculating delta between expiry time and fetched time so that we can fetch new token before it is too late.
     async fn refresh_token(&mut self) -> Result<(), FetchTokenError> {
         if let Some(token_fetched_time) = self.token_fetched_time {
             let duration_since_fetch = Utc::now().signed_duration_since(token_fetched_time).num_seconds();
