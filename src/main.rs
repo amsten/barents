@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         env::var("CLIENT_SECRET").unwrap().to_owned(),
         barents::live_ais::ais_stream::ScopeType::Ais,
     );
-
+    // ais.fetch_token().await?;
     // ais.fetch_token().await?;
     ais.get_latest_ais().await?;
     
