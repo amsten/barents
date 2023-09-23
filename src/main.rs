@@ -20,6 +20,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
     // ais.fetch_token().await?;
     // ais.fetch_token().await?;
+
+    // TODO: datetime variable that is 10 minutes in the past.
+
     ais.get_latest_ais().await?;
     
     Ok(())

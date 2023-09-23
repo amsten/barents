@@ -1,10 +1,10 @@
 use crate::live_ais::respose_structs::GetAISLatestResponses;
 
 use super::respose_structs::TokenResponse;
+use chrono::prelude::*;
 use reqwest::{self, Client, StatusCode};
 use std::collections::HashMap;
 use thiserror::Error;
-use chrono::prelude::*;
 
 use log::{debug, error, info};
 
@@ -118,26 +118,31 @@ impl AisLiveAPI {
 
     async fn refresh_token(&mut self) -> Result<(), FetchTokenError> {
         if let Some(token_fetched_time) = self.token_fetched_time {
-            let duration_since_fetch = Utc::now().signed_duration_since(token_fetched_time).num_seconds();
+            let duration_since_fetch = Utc::now()
+                .signed_duration_since(token_fetched_time)
+                .num_seconds();
             debug!("{}", duration_since_fetch);
-            
+
             if duration_since_fetch < 3300 {
                 debug!("Token is still valid for a long enough time, no need to refresh it.");
                 return Ok(());
             }
         }
-        
+
         self.fetch_token().await?;
         Ok(())
     }
-    
 
-    pub async fn get_latest_ais(&mut self) -> Result<(), FetchTokenError> {
-        let url = reqwest::Url::parse(&format!("{}/v1/latest/ais", BASE_URL))
-            .map_err(FetchTokenError::InvalidUrl)?;
+    pub async fn get_latest_ais(&mut self, since: DateTime<Utc>) -> Result<(), FetchTokenError> {
+        let url = reqwest::Url::parse(&format!(
+            "{}/v1/latest/ais?since={}",
+            BASE_URL,
+            since.format("%Y-%m-%dT%H:%M:%S").to_string()
+        ))
+        .map_err(FetchTokenError::InvalidUrl)?;
         debug!("Method get_latest_ais - Value of URL: {}", url);
 
-        self.refresh_token().await?;    
+        self.refresh_token().await?;
         let token = self.token.as_deref().ok_or(FetchTokenError::NoToken)?;
 
         let res = self
@@ -155,7 +160,7 @@ impl AisLiveAPI {
                     .map_err(FetchTokenError::DeserializationError)?;
 
                 info!("Successfully fetched and deserialized GetAISLatestResponse. Number of messages recieved: {}", latest_ais_response.len());
-                
+
                 Ok(())
             }
             status_code => Err(FetchTokenError::UnexpectedStatusCode(status_code)),
