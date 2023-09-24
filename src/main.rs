@@ -1,8 +1,9 @@
 extern crate dotenv;
 
-use std::{ error::Error, env };
+use chrono::{DateTime, Utc};
 use dotenv::dotenv;
 use log::debug;
+use std::{env, error::Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -18,12 +19,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         env::var("CLIENT_SECRET").unwrap().to_owned(),
         barents::live_ais::ais_stream::ScopeType::Ais,
     );
-    // ais.fetch_token().await?;
-    // ais.fetch_token().await?;
 
     // TODO: datetime variable that is 10 minutes in the past.
 
-    ais.get_latest_ais().await?;
-    
+    // last_fetch = Utc::now();k
+    ais.get_latest_ais(Utc::now() - chrono::Duration::hours(1)).await?;
+
     Ok(())
 }
