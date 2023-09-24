@@ -1,6 +1,6 @@
 extern crate dotenv;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use dotenv::dotenv;
 use log::debug;
 use std::{env, error::Error};
@@ -20,9 +20,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         barents::live_ais::ais_stream::ScopeType::Ais,
     );
 
-    // TODO: datetime variable that is 10 minutes in the past.
-
-    // last_fetch = Utc::now();k
     ais.get_latest_ais(Utc::now() - chrono::Duration::hours(1)).await?;
 
     Ok(())
