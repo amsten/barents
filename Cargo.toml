@@ -24,3 +24,17 @@ chrono = "0.4.31"
 env_logger = "0.10.0"
 log = "0.4.20"
 dotenv = "0.15.0"
+config = "0.13.3"
+
+
+[dependencies.sqlx]
+version = "0.6"
+default-features = false
+features = [
+    "runtime-actix-rustls",
+    "macros",
+    "postgres",
+    "uuid",
+    "chrono",
+    "migrate" 
+]
