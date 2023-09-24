@@ -1,2 +1,6 @@
 /target
 .env
+postgres_env.env
+db-data/*
+configuration.yml
+.DS_Store
