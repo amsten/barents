@@ -4,3 +4,4 @@ postgres_env.env
 db-data/*
 .DS_Store
 configuration.yaml
+./idea/*
