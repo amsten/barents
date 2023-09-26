@@ -1,6 +1,6 @@
-use crate::live_ais::respose_structs::GetAISLatestResponses;
+use crate::live_ais::response_structs::{AISLatestResponses, GetAISLatestResponse};
 
-use super::respose_structs::TokenResponse;
+use super::response_structs::TokenResponse;
 use chrono::prelude::*;
 use reqwest::{self, Client, StatusCode};
 use std::collections::HashMap;
@@ -11,7 +11,7 @@ use log::{debug, error, info};
 static BASE_URL: &'static str = "https://live.ais.barentswatch.no";
 
 #[derive(Error, Debug)]
-pub enum FetchTokenError {
+pub enum ResponseErrorMessages {
     #[error("network error: {0}")]
     NetworkError(reqwest::Error),
 
@@ -74,7 +74,7 @@ impl AisLiveAPI {
         };
     }
 
-    pub async fn fetch_token(&mut self) -> Result<(), FetchTokenError> {
+    pub async fn fetch_token(&mut self) -> Result<(), ResponseErrorMessages> {
         let scope = &String::from(self.scope.as_str());
 
         let mut form = HashMap::new();
@@ -84,7 +84,7 @@ impl AisLiveAPI {
         form.insert("scope", scope);
 
         let url = reqwest::Url::parse("https://id.barentswatch.no/connect/token")
-            .map_err(FetchTokenError::InvalidUrl)?;
+            .map_err(ResponseErrorMessages::InvalidUrl)?;
 
         debug!("fetch_token method - Value of URL: {}", url);
 
@@ -94,13 +94,13 @@ impl AisLiveAPI {
             .form(&form)
             .send()
             .await
-            .map_err(FetchTokenError::NetworkError)?;
+            .map_err(ResponseErrorMessages::NetworkError)?;
         match res.status() {
             StatusCode::OK => {
                 let token_response: TokenResponse = res
                     .json::<TokenResponse>()
                     .await
-                    .map_err(FetchTokenError::DeserializationError)?;
+                    .map_err(ResponseErrorMessages::DeserializationError)?;
                 self.token = Some(String::from(token_response.access_token));
                 self.token_expires_in = Some(token_response.expires_in);
                 self.token_fetched_time = Some(Utc::now());
@@ -112,11 +112,11 @@ impl AisLiveAPI {
 
                 Ok(())
             }
-            status_code => Err(FetchTokenError::UnexpectedStatusCode(status_code)),
+            status_code => Err(ResponseErrorMessages::UnexpectedStatusCode(status_code)),
         }
     }
 
-    async fn refresh_token(&mut self) -> Result<(), FetchTokenError> {
+    async fn refresh_token(&mut self) -> Result<(), ResponseErrorMessages> {
         if let Some(token_fetched_time) = self.token_fetched_time {
             let duration_since_fetch = Utc::now()
                 .signed_duration_since(token_fetched_time)
@@ -133,17 +133,20 @@ impl AisLiveAPI {
         Ok(())
     }
 
-    pub async fn get_latest_ais(&mut self, since: DateTime<Utc>) -> Result<(), FetchTokenError> {
+    pub async fn get_latest_ais(
+        &mut self,
+        since: DateTime<Utc>,
+    ) -> Result<GetAISLatestResponse, ResponseErrorMessages> {
         let url = reqwest::Url::parse(&format!(
             "{}/v1/latest/ais?since={}",
             BASE_URL,
             since.format("%Y-%m-%dT%H:%M:%S").to_string()
         ))
-        .map_err(FetchTokenError::InvalidUrl)?;
+        .map_err(ResponseErrorMessages::InvalidUrl)?;
         debug!("Method get_latest_ais - Value of URL: {}", url);
 
         self.refresh_token().await?;
-        let token = self.token.as_deref().ok_or(FetchTokenError::NoToken)?;
+        let token = self.token.as_deref().ok_or(ResponseErrorMessages::NoToken)?;
 
         let res = self
             .client
@@ -151,21 +154,31 @@ impl AisLiveAPI {
             .bearer_auth(token)
             .send()
             .await
-            .map_err(FetchTokenError::NetworkError)?;
+            .map_err(ResponseErrorMessages::NetworkError)?;
         match res.status() {
             StatusCode::OK => {
-                let latest_ais_response: GetAISLatestResponses = res
-                    .json::<GetAISLatestResponses>()
+                debug!("Content length: {:#?}", &res.content_length());
+                let mut latest_response = GetAISLatestResponse {
+                    api_endpoint: res.url().to_string(),
+                    status_code: res.status().as_u16(),
+                    content_length: None,
+                    ais_latest_responses: None,
+                };
+
+                let latest_ais_response: AISLatestResponses = res
+                    .json::<AISLatestResponses>()
                     .await
-                    .map_err(FetchTokenError::DeserializationError)?;
+                    .map_err(ResponseErrorMessages::DeserializationError)?;
+                info!(
+                    "Successfully fetched and deserialized GetAISLatestResponse. Number of messages received: {}",
+                    &latest_ais_response.len()
+                );
+                latest_response.content_length = Some(latest_ais_response.len());
+                latest_response.ais_latest_responses = Some(latest_ais_response);
 
-                info!("Successfully fetched and deserialized GetAISLatestResponse. Number of messages recieved: {}", latest_ais_response.len());
-
-                Ok(())
+                Ok(latest_response)
             }
-            status_code => Err(FetchTokenError::UnexpectedStatusCode(status_code)),
+            status_code => Err(ResponseErrorMessages::UnexpectedStatusCode(status_code)),
         }
     }
-
-    
 }

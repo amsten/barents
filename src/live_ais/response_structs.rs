@@ -1,7 +1,6 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenResponse {
@@ -14,7 +13,14 @@ pub struct TokenResponse {
     pub scope: String,
 }
 
-pub type GetAISLatestResponses = Vec<GetAISLatestResponseItem>;
+pub type AISLatestResponses = Vec<GetAISLatestResponseItem>;
+#[derive(Default)]
+pub struct GetAISLatestResponse {
+    pub api_endpoint: String,
+    pub status_code: u16,
+    pub content_length: Option<usize>,
+    pub ais_latest_responses: Option<AISLatestResponses>,
+}
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,4 +46,3 @@ pub struct GetAISLatestResponseItem {
     pub position_fixing_device_type: Option<i64>,
     pub report_class: Option<String>,
 }
-
