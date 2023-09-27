@@ -2,12 +2,16 @@ extern crate dotenv;
 
 use barents::database::configuration;
 use barents::database::postgres::BarentsPostgresConnection;
+use barents::live_ais::response_structs::{AISLatestResponses, GetAISLatestResponseItem};
 use barents::live_ais::{ais_stream::AisLiveAPI, response_structs::GetAISLatestResponse};
 use chrono::Utc;
 use dotenv::dotenv;
 use log::{debug, warn};
+use rayon::iter::ParallelIterator;
+use rayon::prelude::IntoParallelRefIterator;
 use std::convert::TryFrom;
 use std::{env, error::Error};
+use std::sync::{Arc, Mutex};
 
 struct LastHourAISMessage {
     status_code: i32,
@@ -50,15 +54,59 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .await?;
 
-    // Lets insert all the items into the database.
-    if last_hour.ais_response.ais_latest_responses.is_some() {
-        db.insert_ais_items(last_hour.ais_response.ais_latest_responses.unwrap(), log_id)
-            .await?;
+    // Lets split the ais messages based on type.
+    match last_hour.ais_response.ais_latest_responses {
+        Some(items) => {
+            process_ais_items(items);
+        }
+        None => {}
     }
+
+    // Lets insert all the items into the database.
+    // if last_hour.ais_response.ais_latest_responses.is_some() {
+    //     db.insert_ais_items(last_hour.ais_response.ais_latest_responses.unwrap(), log_id)
+    //         .await?;
+    // }
 
     Ok(())
 }
 
+fn process_ais_items(ais_items: AISLatestResponses) {
+
+    let static_data: Arc<Mutex<Vec<&GetAISLatestResponseItem>>> = Arc::new(Mutex::new(Vec::new()));
+    let aton_data: Arc<Mutex<Vec<&GetAISLatestResponseItem>>> = Arc::new(Mutex::new(Vec::new()));
+    let position_data: Arc<Mutex<Vec<&GetAISLatestResponseItem>>> = Arc::new(Mutex::new(Vec::new()));
+
+    ais_items
+        .par_iter()
+        .for_each(|item| match &item.type_field {
+            None => {}
+            Some(item_type) => {
+                if item_type.eq_ignore_ascii_case("staticdata") {
+                    let mut res = static_data.lock().unwrap();
+                    res.push(item);
+                } else if item_type.eq_ignore_ascii_case("aton") {
+                    let mut res = aton_data.lock().unwrap();
+                    res.push(item);
+                } else if item_type.eq_ignore_ascii_case("position") {
+                    let mut res = position_data.lock().unwrap();
+                    res.push(item);
+                }
+            }
+        });
+}
+
+fn parse_static_data(static_data: &GetAISLatestResponseItem) {
+    todo!();
+}
+
+fn parse_aton_data(aton_data: &GetAISLatestResponseItem) {
+    todo!();
+}
+
+fn parse_position_data(position_data: &GetAISLatestResponseItem) {
+    todo!();
+}
 async fn fetch_last_hours_ais(mut ais: AisLiveAPI) -> Result<LastHourAISMessage, Box<dyn Error>> {
     let last_hour = ais
         .get_latest_ais(Utc::now() - chrono::Duration::hours(1))
