@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use crate::live_ais::response_structs::{AISLatestResponses, GetAISLatestResponseItem};
+use chrono::{DateTime, Utc};
 use log::Record;
 use sqlx::types::Uuid;
 use sqlx::{query, Error, PgPool};
@@ -44,9 +44,7 @@ impl BarentsPostgresConnection {
         let pool = PgPool::connect(&self.connection_string).await?;
         let mut tx = pool.begin().await?;
         for item in ais_items {
-
             let msg_time_as_date_string = convert_to_datetime_option(item.msgtime);
-
 
             query!(
                 r#"INSERT INTO ais.ais_latest_response_items (
@@ -105,7 +103,7 @@ fn convert_to_datetime_option(input: Option<String>) -> Option<DateTime<Utc>> {
     match input {
         Some(date_string) => match DateTime::parse_from_rfc3339(&date_string) {
             Ok(date) => Some(date.with_timezone(&Utc)), // If successful parsing, convert to DateTime<Utc> and wrap in Some
-            Err(_) => None, // If parsing fails, return None
+            Err(_) => None,                             // If parsing fails, return None
         },
         None => None, // If input is None, return None
     }

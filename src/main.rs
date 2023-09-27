@@ -52,7 +52,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Lets insert all the items into the database.
     if last_hour.ais_response.ais_latest_responses.is_some() {
-        db.insert_ais_items(last_hour.ais_response.ais_latest_responses.unwrap(), log_id).await?;
+        db.insert_ais_items(last_hour.ais_response.ais_latest_responses.unwrap(), log_id)
+            .await?;
     }
 
     Ok(())
