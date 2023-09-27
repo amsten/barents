@@ -1,4 +1,4 @@
-use crate::live_ais::response_structs::{AISLatestResponses, AISStaticData};
+use crate::live_ais::response_structs::{AISStaticData};
 use chrono::{DateTime, Utc};
 use sqlx::types::Uuid;
 use sqlx::{query, Error, PgPool};
@@ -40,12 +40,12 @@ impl BarentsPostgresConnection {
     }
 }
 
-fn convert_to_datetime_option(input: Option<String>) -> Option<DateTime<Utc>> {
-    match input {
-        Some(date_string) => match DateTime::parse_from_rfc3339(&date_string) {
-            Ok(date) => Some(date.with_timezone(&Utc)), // If successful parsing, convert to DateTime<Utc> and wrap in Some
-            Err(_) => None,                             // If parsing fails, return None
-        },
-        None => None, // If input is None, return None
-    }
-}
+// fn convert_to_datetime_option(input: Option<String>) -> Option<DateTime<Utc>> {
+//     match input {
+//         Some(date_string) => match DateTime::parse_from_rfc3339(&date_string) {
+//             Ok(date) => Some(date.with_timezone(&Utc)), // If successful parsing, convert to DateTime<Utc> and wrap in Some
+//             Err(_) => None,                             // If parsing fails, return None
+//         },
+//         None => None, // If input is None, return None
+//     }
+// }
