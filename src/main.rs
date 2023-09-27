@@ -1,14 +1,13 @@
 extern crate dotenv;
 
 use barents::database::configuration;
+use barents::database::postgres::BarentsPostgresConnection;
+use barents::live_ais::{ais_stream::AisLiveAPI, response_structs::GetAISLatestResponse};
 use chrono::Utc;
 use dotenv::dotenv;
 use log::{debug, warn};
-use std::{env, error::Error};
 use std::convert::TryFrom;
-use barents::database::postgres::BarentsPostgresConnection;
-use barents::live_ais::{ais_stream::AisLiveAPI, response_structs::GetAISLatestResponse};
-
+use std::{env, error::Error};
 
 struct LastHourAISMessage {
     status_code: i32,
@@ -42,10 +41,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         barents::live_ais::ais_stream::ScopeType::Ais,
     );
 
-
     let last_hour = fetch_last_hours_ais(ais).await?;
-    db.insert_request_log(last_hour.ais_response.api_endpoint, last_hour.status_code, last_hour.number_of_items)
+    let log_id = db
+        .insert_request_log(
+            last_hour.ais_response.api_endpoint,
+            last_hour.status_code,
+            last_hour.number_of_items,
+        )
         .await?;
+
+    // Lets insert all the items into the database.
+    if last_hour.ais_response.ais_latest_responses.is_some() {
+        db.insert_ais_items(last_hour.ais_response.ais_latest_responses.unwrap(), log_id).await?;
+    }
 
     Ok(())
 }

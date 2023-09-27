@@ -146,7 +146,10 @@ impl AisLiveAPI {
         debug!("Method get_latest_ais - Value of URL: {}", url);
 
         self.refresh_token().await?;
-        let token = self.token.as_deref().ok_or(ResponseErrorMessages::NoToken)?;
+        let token = self
+            .token
+            .as_deref()
+            .ok_or(ResponseErrorMessages::NoToken)?;
 
         let res = self
             .client
