@@ -3,8 +3,7 @@ extern crate dotenv;
 use barents::database::configuration;
 use barents::database::postgres::BarentsPostgresConnection;
 use barents::live_ais::response_structs::{
-    AISAtonData, AISLatestResponses, AISPositionData, AISStaticData, GetAISLatestResponseItem,
-};
+    AISAtonData, AISLatestResponses, AISPositionData, AISStaticData};
 use barents::live_ais::{ais_stream::AisLiveAPI, response_structs::GetAISLatestResponse};
 use chrono::Utc;
 use dotenv::dotenv;
@@ -63,10 +62,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Lets split the ais messages based on type.
+    let split_messages: SplitAISMessages;
     match last_hour.ais_response.ais_latest_responses {
-        Some(items) => {
-            process_ais_items(items);
-        }
+        Some(items) => split_messages = process_ais_items(items).unwrap(),
         None => {}
     }
 
@@ -84,50 +82,42 @@ fn process_ais_items(ais_items: AISLatestResponses) -> Result<SplitAISMessages, 
     let aton_data: Arc<Mutex<Vec<AISAtonData>>> = Arc::new(Mutex::new(Vec::new()));
     let position_data: Arc<Mutex<Vec<AISPositionData>>> = Arc::new(Mutex::new(Vec::new()));
 
-    ais_items
-        .par_iter()
-        .for_each(|item| match &item.type_field {
-            None => {}
-            Some(item_type) => {
-                if item_type.eq_ignore_ascii_case("staticdata") {
-                    let mut res = static_data.lock().unwrap();
-                    let stat: AISStaticData = (item).into();
-                    res.push(stat);
-                } else if item_type.eq_ignore_ascii_case("aton") {
-                    let mut res = aton_data.lock().unwrap();
-                    let aton: AISAtonData = (item).into();
-                    res.push(aton);
-                } else if item_type.eq_ignore_ascii_case("position") {
-                    let mut res = position_data.lock().unwrap();
-                    let position: AISPositionData = (item).into();
-                    res.push(position);
-                }
+    ais_items.par_iter().for_each_with(
+        (Vec::new(), Vec::new(), Vec::new()),
+        |(s_data, a_data, p_data), item| match &item.type_field {
+            Some(item_type) if item_type.eq_ignore_ascii_case("staticdata") => {
+                let stat: AISStaticData = item.into();
+                s_data.push(stat);
             }
-        });
-    let static_data = static_data.lock().unwrap().clone();
-    let aton_data = aton_data.lock().unwrap().clone();
-    let position_data = position_data.lock().unwrap().clone();
+            Some(item_type) if item_type.eq_ignore_ascii_case("aton") => {
+                let aton: AISAtonData = item.into();
+                a_data.push(aton);
+            }
+            Some(item_type) if item_type.eq_ignore_ascii_case("position") => {
+                let position: AISPositionData = item.into();
+                p_data.push(position);
+            }
+            _ => {}
+        },
+    );
 
-    let split_data = SplitAISMessages {
+    let static_data = Arc::try_unwrap(static_data)
+        .unwrap_or_else(|_| panic!("Unexpected reference count"))
+        .into_inner()?;
+    let aton_data = Arc::try_unwrap(aton_data)
+        .unwrap_or_else(|_| panic!("Unexpected reference count"))
+        .into_inner()?;
+    let position_data = Arc::try_unwrap(position_data)
+        .unwrap_or_else(|_| panic!("Unexpected reference count"))
+        .into_inner()?;
+
+    Ok(SplitAISMessages {
         static_data,
         aton_data,
         position_data,
-    };
-
-    Ok(split_data)
+    })
 }
 
-fn parse_static_data(static_data: &GetAISLatestResponseItem) {
-    todo!();
-}
-
-fn parse_aton_data(aton_data: &GetAISLatestResponseItem) {
-    todo!();
-}
-
-fn parse_position_data(position_data: &GetAISLatestResponseItem) {
-    todo!();
-}
 async fn fetch_last_hours_ais(mut ais: AisLiveAPI) -> Result<LastHourAISMessage, Box<dyn Error>> {
     let last_hour = ais
         .get_latest_ais(Utc::now() - chrono::Duration::hours(1))
