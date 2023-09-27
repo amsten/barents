@@ -2,7 +2,9 @@ extern crate dotenv;
 
 use barents::database::configuration;
 use barents::database::postgres::BarentsPostgresConnection;
-use barents::live_ais::response_structs::{AISLatestResponses, GetAISLatestResponseItem};
+use barents::live_ais::response_structs::{
+    AISAtonData, AISLatestResponses, AISPositionData, AISStaticData, GetAISLatestResponseItem,
+};
 use barents::live_ais::{ais_stream::AisLiveAPI, response_structs::GetAISLatestResponse};
 use chrono::Utc;
 use dotenv::dotenv;
@@ -10,13 +12,19 @@ use log::{debug, warn};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
 use std::convert::TryFrom;
-use std::{env, error::Error};
 use std::sync::{Arc, Mutex};
+use std::{env, error::Error};
 
 struct LastHourAISMessage {
     status_code: i32,
     number_of_items: i64,
     ais_response: GetAISLatestResponse,
+}
+
+struct SplitAISMessages {
+    static_data: Vec<AISStaticData>,
+    aton_data: Vec<AISAtonData>,
+    position_data: Vec<AISPositionData>,
 }
 
 #[tokio::main]
@@ -71,11 +79,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn process_ais_items(ais_items: AISLatestResponses) {
-
-    let static_data: Arc<Mutex<Vec<&GetAISLatestResponseItem>>> = Arc::new(Mutex::new(Vec::new()));
-    let aton_data: Arc<Mutex<Vec<&GetAISLatestResponseItem>>> = Arc::new(Mutex::new(Vec::new()));
-    let position_data: Arc<Mutex<Vec<&GetAISLatestResponseItem>>> = Arc::new(Mutex::new(Vec::new()));
+fn process_ais_items(ais_items: AISLatestResponses) -> Result<SplitAISMessages, Box<dyn Error>> {
+    let static_data: Arc<Mutex<Vec<AISStaticData>>> = Arc::new(Mutex::new(Vec::new()));
+    let aton_data: Arc<Mutex<Vec<AISAtonData>>> = Arc::new(Mutex::new(Vec::new()));
+    let position_data: Arc<Mutex<Vec<AISPositionData>>> = Arc::new(Mutex::new(Vec::new()));
 
     ais_items
         .par_iter()
@@ -84,16 +91,30 @@ fn process_ais_items(ais_items: AISLatestResponses) {
             Some(item_type) => {
                 if item_type.eq_ignore_ascii_case("staticdata") {
                     let mut res = static_data.lock().unwrap();
-                    res.push(item);
+                    let stat: AISStaticData = (item).into();
+                    res.push(stat);
                 } else if item_type.eq_ignore_ascii_case("aton") {
                     let mut res = aton_data.lock().unwrap();
-                    res.push(item);
+                    let aton: AISAtonData = (item).into();
+                    res.push(aton);
                 } else if item_type.eq_ignore_ascii_case("position") {
                     let mut res = position_data.lock().unwrap();
-                    res.push(item);
+                    let position: AISPositionData = (item).into();
+                    res.push(position);
                 }
             }
         });
+    let static_data = static_data.lock().unwrap().clone();
+    let aton_data = aton_data.lock().unwrap().clone();
+    let position_data = position_data.lock().unwrap().clone();
+
+    let split_data = SplitAISMessages {
+        static_data,
+        aton_data,
+        position_data,
+    };
+
+    Ok(split_data)
 }
 
 fn parse_static_data(static_data: &GetAISLatestResponseItem) {
