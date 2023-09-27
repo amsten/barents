@@ -1,6 +1,5 @@
-use crate::live_ais::response_structs::{AISLatestResponses, GetAISLatestResponseItem};
+use crate::live_ais::response_structs::AISLatestResponses;
 use chrono::{DateTime, Utc};
-use log::Record;
 use sqlx::types::Uuid;
 use sqlx::{query, Error, PgPool};
 
