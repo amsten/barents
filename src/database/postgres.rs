@@ -1,4 +1,4 @@
-use crate::live_ais::response_structs::AISLatestResponses;
+use crate::live_ais::response_structs::{AISLatestResponses, AISStaticData};
 use chrono::{DateTime, Utc};
 use sqlx::types::Uuid;
 use sqlx::{query, Error, PgPool};
@@ -35,66 +35,8 @@ impl BarentsPostgresConnection {
         Ok(id)
     }
 
-    pub async fn insert_ais_items(
-        &self,
-        ais_items: AISLatestResponses,
-        log_id: Uuid,
-    ) -> Result<(), Error> {
-        let pool = PgPool::connect(&self.connection_string).await?;
-        let mut tx = pool.begin().await?;
-        for item in ais_items {
-            let msg_time_as_date_string = convert_to_datetime_option(item.msgtime);
-
-            query!(
-                r#"INSERT INTO ais.ais_latest_response_items (
-                    type_field,
-                    message_type,
-                    mmsi,
-                    msgtime,
-                    imo_number,
-                    call_sign,
-                    destination,
-                    eta,
-                    name,
-                    draught,
-                    ship_length,
-                    ship_width,
-                    ship_type,
-                    dimension_a,
-                    dimension_b,
-                    dimension_c,
-                    dimension_d,
-                    position_fixing_device_type,
-                    report_class,
-                    log_id
-                ) VALUES ( $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20 )
-                "#,
-                item.type_field,
-                item.message_type,
-                item.mmsi,
-                msg_time_as_date_string,
-                item.imo_number,
-                item.call_sign,
-                item.destination,
-                item.eta,
-                item.name,
-                item.draught,
-                item.ship_length,
-                item.ship_width,
-                item.ship_type,
-                item.dimension_a,
-                item.dimension_b,
-                item.dimension_c,
-                item.dimension_d,
-                item.position_fixing_device_type,
-                item.report_class,
-                log_id,
-            ).execute(&mut tx).await?;
-        }
-
-        tx.commit().await?;
-        pool.close().await;
-        Ok(())
+    pub async fn insert_static_data(&self, static_data: AISStaticData) {
+        todo!();
     }
 }
 
