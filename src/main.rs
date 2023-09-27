@@ -13,6 +13,9 @@ use rayon::prelude::IntoParallelRefIterator;
 use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 use std::{env, error::Error};
+use sqlx::Postgres;
+use tokio::task;
+use tokio::task::JoinHandle;
 
 struct LastHourAISMessage {
     status_code: i32,
@@ -43,7 +46,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     let connection_string = db.connection_string();
     debug!("Connection string: {}", connection_string);
-    let db = BarentsPostgresConnection::new(connection_string);
+
+    // TODO: Figure out how to create a threadsafe pool that might be shared.
+    // let db = BarentsPostgresConnection::new(connection_string);
+    let db = Arc::new(BarentsPostgresConnection::new(connection_string));
 
     let ais = AisLiveAPI::new(
         "client_credentials".to_owned(),
@@ -53,7 +59,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     let last_hour = fetch_last_hours_ais(ais).await?;
-    let log_id = db
+    let log_db = Arc::clone(&db);
+    let log_id = log_db
         .insert_request_log(
             last_hour.ais_response.api_endpoint,
             last_hour.status_code,
@@ -62,13 +69,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await?;
 
     // Lets split the ais messages based on type.
-    let split_messages: SplitAISMessages;
+    let aton_handle: JoinHandle<Result<(), Box<dyn Error+Send+Sync>>>;
+    let static_handle: JoinHandle<Result<(), Box<dyn Error+Send+Sync>>>;
+    let position_handle: JoinHandle<Result<(), Box<dyn Error+Send+Sync>>>;
+
     match last_hour.ais_response.ais_latest_responses {
-        Some(items) => split_messages = process_ais_items(items).unwrap(),
-        None => {}
+        Some(items) => {
+            let split_messages: SplitAISMessages = process_ais_items(items).unwrap();
+
+            // Cloning the Arc to get a new reference to the same object
+            let aton_db = Arc::clone(&db);
+            let static_db = Arc::clone(&db);
+            let position_db = Arc::clone(&db);
+
+            // Lets insert all the items into the database.
+            aton_handle = task::spawn(aton_db.insert_aton_data(split_messages.aton_data, log_id));
+            static_handle = task::spawn(static_db.insert_static_data(split_messages.static_data, log_id));
+            position_handle = task::spawn(position_db.insert_position_data(split_messages.position_data, log_id));
+        },
+        None => {
+            // TODO: Handle the case where there are no ais_latest_responses appropriately.
+            // Here we just spawn dummy tasks that immediately resolve to Ok(())
+            aton_handle = task::spawn(async { Ok(()) });
+            static_handle = task::spawn(async { Ok(()) });
+            position_handle = task::spawn(async { Ok(()) });
+        }
     }
 
-    // Lets insert all the items into the database.
+    let _ = tokio::try_join!(aton_handle, static_handle, position_handle);
+
+
     // if last_hour.ais_response.ais_latest_responses.is_some() {
     //     db.insert_ais_items(last_hour.ais_response.ais_latest_responses.unwrap(), log_id)
     //         .await?;
