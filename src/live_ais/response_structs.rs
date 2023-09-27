@@ -22,6 +22,7 @@ pub struct GetAISLatestResponse {
     pub ais_latest_responses: Option<AISLatestResponses>,
 }
 
+//noinspection ALL
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetAISLatestResponseItem {

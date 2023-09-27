@@ -1,2 +1,2 @@
 pub mod ais_stream;
-mod response_structs;
+pub mod response_structs;

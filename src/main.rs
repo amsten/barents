@@ -1,11 +1,20 @@
 extern crate dotenv;
 
-use barents::database::{configuration, postgres};
+use barents::database::configuration;
 use chrono::Utc;
 use dotenv::dotenv;
 use log::{debug, warn};
 use std::{env, error::Error};
 use std::convert::TryFrom;
+use barents::database::postgres::BarentsPostgresConnection;
+use barents::live_ais::{ais_stream::AisLiveAPI, response_structs::GetAISLatestResponse};
+
+
+struct LastHourAISMessage {
+    status_code: i32,
+    number_of_items: i64,
+    ais_response: GetAISLatestResponse,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -24,20 +33,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     let connection_string = db.connection_string();
     debug!("Connection string: {}", connection_string);
-    let db = postgres::BarentsPostgresConnection::new(connection_string);
+    let db = BarentsPostgresConnection::new(connection_string);
 
-    let mut ais = barents::live_ais::ais_stream::AisLiveAPI::new(
+    let ais = AisLiveAPI::new(
         "client_credentials".to_owned(),
         env::var("CLIENT_ID").unwrap().to_owned(),
         env::var("CLIENT_SECRET").unwrap().to_owned(),
         barents::live_ais::ais_stream::ScopeType::Ais,
     );
 
+
+    let last_hour = fetch_last_hours_ais(ais).await?;
+    db.insert_request_log(last_hour.ais_response.api_endpoint, last_hour.status_code, last_hour.number_of_items)
+        .await?;
+
+    Ok(())
+}
+
+async fn fetch_last_hours_ais(mut ais: AisLiveAPI) -> Result<LastHourAISMessage, Box<dyn Error>> {
     let last_hour = ais
         .get_latest_ais(Utc::now() - chrono::Duration::hours(1))
         .await?;
+
     let status_code: i32;
-    let content_length: i64;
+    let number_of_items: i64;
 
     match i32::try_from(last_hour.status_code) {
         Ok(val) => status_code = val,
@@ -47,15 +66,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     match i64::try_from(last_hour.content_length.unwrap_or_default()) {
-        Ok(val) => content_length = val,
+        Ok(val) => number_of_items = val,
         Err(_) => {
             warn!("Failed to convert the content length into i64 data type. Defaulting to 0");
-            content_length = 0;
+            number_of_items = 0;
         }
     };
 
-    db.insert_request_log(last_hour.api_endpoint, status_code, content_length)
-        .await?;
-
-    Ok(())
+    Ok(LastHourAISMessage {
+        status_code,
+        number_of_items,
+        ais_response: last_hour,
+    })
 }
