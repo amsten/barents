@@ -1,5 +1,6 @@
 use crate::live_ais::response_structs::{AISAtonData, AISPositionData, AISStaticData};
 use chrono::{DateTime, Utc};
+use log::debug;
 use sqlx::types::Uuid;
 use sqlx::{query, Error, PgPool};
 
@@ -203,6 +204,7 @@ pub async fn insert_static_data(
         ).execute(&db_pool).await.unwrap();
     }
     tx.commit().await?;
+    debug!("Committed static data.");
     Ok(())
 }
 

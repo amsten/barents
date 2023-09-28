@@ -71,7 +71,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // TODO: Handle errors.
         let split_messages = process_ais_items(messages).unwrap();
 
-        // TODO: Create thread for each message type and do DB inserts.
         let aton_handle = task::spawn(insert_aton_data(
             connection_pool.clone(),
             split_messages.aton_data,
@@ -95,6 +94,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             Err(error) => warn!("There was an error in one of the threads: {:?}", error)
         }
+        // let static_data = split_messages.static_data.clone();
+        // insert_static_data(
+        //     connection_pool.clone(),
+        //     split_messages.static_data,
+        //     log_id.clone(),
+        // ).await?;
     }
 
     Ok(())
@@ -105,40 +110,37 @@ fn process_ais_items(ais_items: AISLatestResponses) -> Result<SplitAISMessages, 
     let aton_data: Arc<Mutex<Vec<AISAtonData>>> = Arc::new(Mutex::new(Vec::new()));
     let position_data: Arc<Mutex<Vec<AISPositionData>>> = Arc::new(Mutex::new(Vec::new()));
 
-    ais_items.par_iter().for_each_with(
-        (Vec::new(), Vec::new(), Vec::new()),
-        |(s_data, a_data, p_data), item| match &item.type_field {
-            Some(item_type) if item_type.eq_ignore_ascii_case("staticdata") => {
-                let stat: AISStaticData = item.into();
-                s_data.push(stat);
+    ais_items
+        .par_iter()
+        .for_each(|item| match &item.type_field {
+            None => {}
+            Some(item_type) => {
+                if item_type.eq_ignore_ascii_case("staticdata") {
+                    let mut res = static_data.lock().unwrap();
+                    let stat: AISStaticData = (item).into();
+                    res.push(stat);
+                } else if item_type.eq_ignore_ascii_case("aton") {
+                    let mut res = aton_data.lock().unwrap();
+                    let aton: AISAtonData = (item).into();
+                    res.push(aton);
+                } else if item_type.eq_ignore_ascii_case("position") {
+                    let mut res = position_data.lock().unwrap();
+                    let position: AISPositionData = (item).into();
+                    res.push(position);
+                }
             }
-            Some(item_type) if item_type.eq_ignore_ascii_case("aton") => {
-                let aton: AISAtonData = item.into();
-                a_data.push(aton);
-            }
-            Some(item_type) if item_type.eq_ignore_ascii_case("position") => {
-                let position: AISPositionData = item.into();
-                p_data.push(position);
-            }
-            _ => {}
-        },
-    );
+        });
+    let static_data = static_data.lock().unwrap().clone();
+    let aton_data = aton_data.lock().unwrap().clone();
+    let position_data = position_data.lock().unwrap().clone();
 
-    let static_data = Arc::try_unwrap(static_data)
-        .unwrap_or_else(|_| panic!("Unexpected reference count"))
-        .into_inner()?;
-    let aton_data = Arc::try_unwrap(aton_data)
-        .unwrap_or_else(|_| panic!("Unexpected reference count"))
-        .into_inner()?;
-    let position_data = Arc::try_unwrap(position_data)
-        .unwrap_or_else(|_| panic!("Unexpected reference count"))
-        .into_inner()?;
-
-    Ok(SplitAISMessages {
+    let split_data = SplitAISMessages {
         static_data,
         aton_data,
         position_data,
-    })
+    };
+
+    Ok(split_data)
 }
 
 async fn fetch_last_hours_ais(mut ais: AisLiveAPI) -> Result<LastHourAISMessage, Box<dyn Error>> {
