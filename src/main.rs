@@ -1,19 +1,20 @@
 extern crate dotenv;
 
 use barents::database::configuration;
-use barents::database::postgres::BarentsPostgresConnection;
+use barents::database::postgres::DbMethods;
 use barents::live_ais::response_structs::{
-    AISAtonData, AISLatestResponses, AISPositionData, AISStaticData};
+    AISAtonData, AISLatestResponses, AISPositionData, AISStaticData,
+};
 use barents::live_ais::{ais_stream::AisLiveAPI, response_structs::GetAISLatestResponse};
 use chrono::Utc;
 use dotenv::dotenv;
 use log::{debug, warn};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
+use sqlx::{PgPool, Postgres};
 use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 use std::{env, error::Error};
-use sqlx::Postgres;
 use tokio::task;
 use tokio::task::JoinHandle;
 
@@ -37,19 +38,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     debug!("Reading configuration file for Postgres");
     let config = configuration::get_configuration()?;
 
-    let db = configuration::DatabaseSettings {
+    let db_settings = configuration::DatabaseSettings {
         username: config.database.username.to_string(),
         password: config.database.password.to_string(),
         host: config.database.host.to_string(),
         port: config.database.port,
         database_name: config.database.database_name.to_string(),
     };
-    let connection_string = db.connection_string();
+    let connection_string = db_settings.connection_string();
     debug!("Connection string: {}", connection_string);
-
-    // TODO: Figure out how to create a threadsafe pool that might be shared.
-    // let db = BarentsPostgresConnection::new(connection_string);
-    let db = Arc::new(BarentsPostgresConnection::new(connection_string));
+    let connection_pool = PgPool::connect(&connection_string)
+        .await
+        .expect("Failed to connect to Postgres");
+    let dbm = DbMethods {};
 
     let ais = AisLiveAPI::new(
         "client_credentials".to_owned(),
@@ -59,50 +60,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     let last_hour = fetch_last_hours_ais(ais).await?;
-    let log_db = Arc::clone(&db);
-    let log_id = log_db
+    let log_id = dbm
         .insert_request_log(
+            connection_pool.clone(),
             last_hour.ais_response.api_endpoint,
             last_hour.status_code,
             last_hour.number_of_items,
         )
         .await?;
+    if let Some(messages) = last_hour.ais_response.ais_latest_responses {
+        // TODO: Handle errors.
+        let split_messages = process_ais_items(messages).unwrap();
 
-    // Lets split the ais messages based on type.
-    let aton_handle: JoinHandle<Result<(), Box<dyn Error+Send+Sync>>>;
-    let static_handle: JoinHandle<Result<(), Box<dyn Error+Send+Sync>>>;
-    let position_handle: JoinHandle<Result<(), Box<dyn Error+Send+Sync>>>;
+        // TODO: Create thread for each message type and do DB inserts.
+        let aton_handle = task::spawn(dbm.insert_aton_data(
+            connection_pool.clone(),
+            split_messages.aton_data,
+            &log_id,
+        ));
+        let static_handle = task::spawn(dbm.insert_static_data(
+            connection_pool.clone(),
+            split_messages.static_data,
+            &log_id,
+        ));
+        let position_handle = task::spawn(dbm.insert_position_data(
+            connection_pool.clone(),
+            split_messages.position_data,
+            &log_id,
+        ));
 
-    match last_hour.ais_response.ais_latest_responses {
-        Some(items) => {
-            let split_messages: SplitAISMessages = process_ais_items(items).unwrap();
-
-            // Cloning the Arc to get a new reference to the same object
-            let aton_db = Arc::clone(&db);
-            let static_db = Arc::clone(&db);
-            let position_db = Arc::clone(&db);
-
-            // Lets insert all the items into the database.
-            aton_handle = task::spawn(aton_db.insert_aton_data(split_messages.aton_data, log_id));
-            static_handle = task::spawn(static_db.insert_static_data(split_messages.static_data, log_id));
-            position_handle = task::spawn(position_db.insert_position_data(split_messages.position_data, log_id));
-        },
-        None => {
-            // TODO: Handle the case where there are no ais_latest_responses appropriately.
-            // Here we just spawn dummy tasks that immediately resolve to Ok(())
-            aton_handle = task::spawn(async { Ok(()) });
-            static_handle = task::spawn(async { Ok(()) });
-            position_handle = task::spawn(async { Ok(()) });
-        }
+        let _ = tokio::try_join!(aton_handle, static_handle, position_handle);
     }
-
-    let _ = tokio::try_join!(aton_handle, static_handle, position_handle);
-
-
-    // if last_hour.ais_response.ais_latest_responses.is_some() {
-    //     db.insert_ais_items(last_hour.ais_response.ais_latest_responses.unwrap(), log_id)
-    //         .await?;
-    // }
 
     Ok(())
 }

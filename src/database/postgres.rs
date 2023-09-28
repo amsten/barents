@@ -1,26 +1,34 @@
 use crate::live_ais::response_structs::{AISAtonData, AISPositionData, AISStaticData};
 use chrono::{DateTime, Utc};
-use rayon::iter::ParallelIterator;
-use rayon::prelude::IntoParallelRefIterator;
 use sqlx::types::Uuid;
 use sqlx::{query, Error, PgPool};
 
-pub struct BarentsPostgresConnection {
-    connection_string: String,
-}
+pub struct DbMethods {}
 
-impl BarentsPostgresConnection {
-    pub fn new(connection_string: String) -> Self {
-        return BarentsPostgresConnection { connection_string };
-    }
+impl DbMethods {
+    // pub fn new(connection_string: String) -> Self {
+    //     return BarentsPostgresConnection {
+    //         connection_string,
+    //         pool: PgPool::connect(&connection_string).await.unwrap(),
+    //     };
+    // }
+
+    // pub async fn init(connection_string: String) -> Result<Self, sqlx::Error> {
+    //     let pool = PgPool::connect(&connection_string).await?;
+    //     Ok(BarentsPostgresConnection {
+    //         connection_string,
+    //         pool,
+    //     })
+    // }
     pub async fn insert_request_log(
         &self,
+        db_pool: PgPool,
         api_endpoint: String,
         status_code: i32,
         number_of_messages: i64,
     ) -> Result<Uuid, Error> {
-        let pool = PgPool::connect(&self.connection_string).await?;
-        let mut tx = pool.begin().await?;
+        // let pool = PgPool::connect(&self.connection_string).await?;
+        let mut tx = db_pool.begin().await?;
         let id = query!(
             "INSERT INTO \
           log.requests (api_endpoint, status_code, number_of_messages_received) \
@@ -33,13 +41,18 @@ impl BarentsPostgresConnection {
         .await?
         .id;
         tx.commit().await?;
-        pool.close().await;
+
         Ok(id)
     }
 
-    pub async fn insert_static_data(&self, static_data: Vec<AISStaticData>, log_id: Uuid) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let pool = PgPool::connect(&self.connection_string).await?;
-        let tx = pool.begin().await?;
+    pub async fn insert_static_data(
+        &self,
+        db_pool: PgPool,
+        static_data: Vec<AISStaticData>,
+        log_id: &Uuid,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // let pool = PgPool::connect(&self.connection_string).await?;
+        let tx = db_pool.begin().await?;
 
         for data in static_data {
             sqlx::query!(
@@ -52,16 +65,20 @@ impl BarentsPostgresConnection {
                 data.destination, data.eta, data.name, data.draught, data.ship_length, data.ship_width,
                 data.ship_type, data.dimension_a, data.dimension_b, data.dimension_c, data.dimension_d,
                 data.position_fixing_device_type, data.report_class, log_id
-            ).execute(&pool).await.unwrap();
+            ).execute(&db_pool).await.unwrap();
         }
         tx.commit().await?;
-        pool.close().await;
         Ok(())
     }
 
-    pub async fn insert_aton_data(&self, aton_data: Vec<AISAtonData>, log_id: Uuid) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let pool = PgPool::connect(&self.connection_string).await?;
-        let tx = pool.begin().await?;
+    pub async fn insert_aton_data(
+        &self,
+        db_pool: PgPool,
+        aton_data: Vec<AISAtonData>,
+        log_id: &Uuid,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // let pool = PgPool::connect(&self.connection_string).await?;
+        let tx = db_pool.begin().await?;
 
         for data in aton_data {
             sqlx::query!(
@@ -72,17 +89,21 @@ impl BarentsPostgresConnection {
                 data.type_field, data.message_type, data.mmsi, convert_to_datetime_option(data.msgtime), data.dimension_a, data.dimension_b,
                 data.dimension_c, data.dimension_d, data.type_of_aids_to_navigation, data.latitude,
                 data.longitude, data.name, data.type_of_electronic_fixing_device, log_id
-            ).execute(&pool).await?;
+            ).execute(&db_pool).await?;
         }
         tx.commit().await?;
-        pool.close().await;
 
         Ok(())
     }
 
-    pub async fn insert_position_data(&self, position_data: Vec<AISPositionData>, log_id: Uuid) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let pool = PgPool::connect(&self.connection_string).await?;
-        let tx = pool.begin().await?;
+    pub async fn insert_position_data(
+        &self,
+        db_pool: PgPool,
+        position_data: Vec<AISPositionData>,
+        log_id: &Uuid,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // let pool = PgPool::connect(&self.connection_string).await?;
+        let tx = db_pool.begin().await?;
 
         for data in position_data {
             sqlx::query!(
@@ -93,11 +114,9 @@ impl BarentsPostgresConnection {
                 data.type_field, data.message_type, data.course_over_ground, data.ais_class, data.altitude,
                 data.latitude, data.longitude, data.navigational_status, data.rate_of_turn, data.speed_over_ground,
                 data.true_heading, data.mmsi, convert_to_datetime_option(data.msgtime), log_id
-            ).execute(&pool).await?;
-
+            ).execute(&db_pool).await?;
         }
         tx.commit().await?;
-        pool.close().await;
 
         Ok(())
     }
