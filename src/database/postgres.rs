@@ -210,9 +210,9 @@ pub async fn insert_static_data(
 
 pub async fn insert_request_log(
     db_pool: PgPool,
-    api_endpoint: String,
-    status_code: i32,
-    number_of_messages: i64,
+    api_endpoint: &String,
+    status_code: &i32,
+    number_of_messages: &i64,
 ) -> Result<Uuid, Error> {
     // let pool = PgPool::connect(&self.connection_string).await?;
     let mut tx = db_pool.begin().await?;

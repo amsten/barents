@@ -15,6 +15,7 @@ use sqlx::{PgPool};
 use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 use std::{env, error::Error};
+use sqlx::types::Uuid;
 use tokio::task;
 
 struct LastHourAISMessage {
@@ -60,11 +61,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let last_hour = fetch_last_hours_ais(ais).await?;
     let log_id = insert_request_log(
             connection_pool.clone(),
-            last_hour.ais_response.api_endpoint,
-            last_hour.status_code,
-            last_hour.number_of_items,
+            &last_hour.ais_response.api_endpoint,
+            &last_hour.status_code,
+            &last_hour.number_of_items,
         )
         .await?;
+    insert_ais_items(connection_pool, log_id, last_hour).await?;
+
+    Ok(())
+}
+
+async fn insert_ais_items(connection_pool: PgPool, log_id: Uuid, last_hour: LastHourAISMessage) -> Result<(), Box<dyn Error>> {
     if let Some(messages) = last_hour.ais_response.ais_latest_responses {
         // TODO: Handle errors.
         let split_messages = process_ais_items(messages).unwrap();
