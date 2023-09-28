@@ -1,7 +1,7 @@
 extern crate dotenv;
 
 use barents::database::configuration;
-use barents::database::postgres::DbMethods;
+use barents::database::postgres::{DbMethods, insert_aton_data, insert_position_data, insert_request_log, insert_static_data};
 use barents::live_ais::response_structs::{
     AISAtonData, AISLatestResponses, AISPositionData, AISStaticData,
 };
@@ -60,8 +60,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     let last_hour = fetch_last_hours_ais(ais).await?;
-    let log_id = dbm
-        .insert_request_log(
+    let log_id = insert_request_log(
             connection_pool.clone(),
             last_hour.ais_response.api_endpoint,
             last_hour.status_code,
@@ -73,23 +72,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let split_messages = process_ais_items(messages).unwrap();
 
         // TODO: Create thread for each message type and do DB inserts.
-        let aton_handle = task::spawn(dbm.insert_aton_data(
+        let aton_handle = task::spawn(insert_aton_data(
             connection_pool.clone(),
             split_messages.aton_data,
-            &log_id,
+            log_id.clone(),
         ));
-        let static_handle = task::spawn(dbm.insert_static_data(
+        let static_handle = task::spawn(insert_static_data(
             connection_pool.clone(),
             split_messages.static_data,
-            &log_id,
+            log_id.clone(),
         ));
-        let position_handle = task::spawn(dbm.insert_position_data(
+        let position_handle = task::spawn(insert_position_data(
             connection_pool.clone(),
             split_messages.position_data,
-            &log_id,
+            log_id.clone(),
         ));
 
-        let _ = tokio::try_join!(aton_handle, static_handle, position_handle);
+        let res = tokio::try_join!(aton_handle, static_handle, position_handle);
+        match res {
+            Ok(..) => {
+                debug!("Threads completed");
+            }
+            Err(error) => warn!("There was an error in one of the threads: {:?}", error)
+        }
     }
 
     Ok(())
