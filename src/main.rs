@@ -1,7 +1,7 @@
 extern crate dotenv;
 
 use barents::database::configuration;
-use barents::database::postgres::{DbMethods, insert_aton_data, insert_position_data, insert_request_log, insert_static_data};
+use barents::database::postgres::{insert_aton_data, insert_position_data, insert_request_log, insert_static_data};
 use barents::live_ais::response_structs::{
     AISAtonData, AISLatestResponses, AISPositionData, AISStaticData,
 };
@@ -11,12 +11,11 @@ use dotenv::dotenv;
 use log::{debug, warn};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
-use sqlx::{PgPool, Postgres};
+use sqlx::{PgPool};
 use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 use std::{env, error::Error};
 use tokio::task;
-use tokio::task::JoinHandle;
 
 struct LastHourAISMessage {
     status_code: i32,
@@ -50,7 +49,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let connection_pool = PgPool::connect(&connection_string)
         .await
         .expect("Failed to connect to Postgres");
-    let dbm = DbMethods {};
 
     let ais = AisLiveAPI::new(
         "client_credentials".to_owned(),
@@ -94,12 +92,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             Err(error) => warn!("There was an error in one of the threads: {:?}", error)
         }
-        // let static_data = split_messages.static_data.clone();
-        // insert_static_data(
-        //     connection_pool.clone(),
-        //     split_messages.static_data,
-        //     log_id.clone(),
-        // ).await?;
     }
 
     Ok(())
